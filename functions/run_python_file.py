@@ -1,38 +1,61 @@
-import os, subprocess
+import os
+import subprocess
 from google.genai import types
 
-def run_python_file(working_directory, file_path, args=[]):
+
+def run_python_file(working_directory, file_path, args=None):
+    abs_working_dir = os.path.abspath(working_directory)
+    abs_file_path = os.path.abspath(os.path.join(working_directory, file_path))
+    if not abs_file_path.startswith(abs_working_dir):
+        return f'Error: Cannot execute "{file_path}" as it is outside the permitted working directory'
+    if not os.path.exists(abs_file_path):
+        return f'Error: File "{file_path}" not found.'
+    if not file_path.endswith(".py"):
+        return f'Error: "{file_path}" is not a Python file.'
     try:
-        full_path = os.path.abspath(os.path.join(working_directory, file_path))
-        working_path = os.path.abspath(working_directory)
-        if not full_path.startswith(working_path + os.sep):
-            return f'Error: Cannot execute "{file_path}" as it is outside the permitted working directory'
-        if not os.path.isfile(full_path):
-            return f'Error: File "{file_path}" not found.'
-        if not full_path.endswith(".py"):
-            return f'Error: "{file_path}" is not a Python file.'
-        cmd = ["python", full_path] + args
-        run_file = subprocess.run(cmd, capture_output=True, timeout=30, cwd=os.path.dirname(full_path))
-        if  not run_file.stdout:
-            return "No output produced"
-        run_info = f"STDOUT: {run_file.stdout}\n"
-        run_info += f"STDERR: {run_file.stderr}\n"
-        if run_file.returncode != 0:
-            run_info += f"Process exited with code {run_file.returncode}"
-        return run_info
+        commands = ["python", abs_file_path]
+        if args:
+            commands.extend(args)
+        result = subprocess.run(
+            commands,
+            capture_output=True,
+            text=True,
+            timeout=30,
+            cwd=abs_working_dir,
+        )
+        output = []
+        if result.stdout:
+            output.append(f"STDOUT:\n{result.stdout}")
+        if result.stderr:
+            output.append(f"STDERR:\n{result.stderr}")
+
+        if result.returncode != 0:
+            output.append(f"Process exited with code {result.returncode}")
+
+        return "\n".join(output) if output else "No output produced."
     except Exception as e:
         return f"Error: executing Python file: {e}"
-    
+
+
 schema_run_python_file = types.FunctionDeclaration(
     name="run_python_file",
-    description="Runs the specified python file and prints its output, constrained to the working directory",
+    description="Executes a Python file within the working directory and returns the output from the interpreter.",
     parameters=types.Schema(
         type=types.Type.OBJECT,
         properties={
             "file_path": types.Schema(
                 type=types.Type.STRING,
-                description="The file path of the pyton file in the working directory where it is run"
+                description="Path to the Python file to execute, relative to the working directory.",
+            ),
+            "args": types.Schema(
+                type=types.Type.ARRAY,
+                items=types.Schema(
+                    type=types.Type.STRING,
+                    description="Optional arguments to pass to the Python file.",
+                ),
+                description="Optional arguments to pass to the Python file.",
             ),
         },
+        required=["file_path"],
     ),
 )
